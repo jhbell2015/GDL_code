@@ -2,7 +2,7 @@ import pickle
 import os
 
 from keras.datasets import mnist, cifar100,cifar10
-from keras.preprocessing.image import ImageDataGenerator, load_img, save_img, img_to_array
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, save_img, img_to_array
 
 import pandas as pd
 
@@ -137,7 +137,7 @@ def load_model(model_class, folder):
 
     model = model_class(*params)
 
-    model.load_weights(os.path.join(folder, 'weights/weights.h5'))
+    model.load_weights(os.path.join(folder, 'weights/autoencoder.weights.h5'))
 
     return model
 

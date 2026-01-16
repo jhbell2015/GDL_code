@@ -1,7 +1,10 @@
 
 from keras.layers import Input, Conv2D, Flatten, Dense, Conv2DTranspose, Reshape, Lambda, Activation, BatchNormalization, LeakyReLU, Dropout
 from keras.models import Model
-from keras import backend as K
+
+# from keras import backend as K
+import keras.ops as ops
+
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint 
 from keras.utils import plot_model
@@ -73,7 +76,7 @@ class Autoencoder():
             if self.use_dropout:
                 x = Dropout(rate = 0.25)(x)
 
-        shape_before_flattening = K.int_shape(x)[1:]
+        shape_before_flattening = x.shape[1:]
 
         x = Flatten()(x)
         encoder_output= Dense(self.z_dim, name='encoder_output')(x)
@@ -123,10 +126,10 @@ class Autoencoder():
     def compile(self, learning_rate):
         self.learning_rate = learning_rate
 
-        optimizer = Adam(lr=learning_rate)
+        optimizer = Adam(learning_rate=learning_rate)
 
         def r_loss(y_true, y_pred):
-            return K.mean(K.square(y_true - y_pred), axis = [1,2,3])
+            return ops.mean(ops.square(y_true - y_pred), axis = [1,2,3])
 
         self.model.compile(optimizer=optimizer, loss = r_loss)
 
@@ -166,7 +169,7 @@ class Autoencoder():
         custom_callback = CustomCallback(run_folder, print_every_n_batches, initial_epoch, self)
         lr_sched = step_decay_schedule(initial_lr=self.learning_rate, decay_factor=lr_decay, step_size=1)
 
-        checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/weights.h5'), save_weights_only = True, verbose=1)
+        checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/autoencoder.weights.h5'), save_weights_only = True, verbose=1)
 
         callbacks_list = [checkpoint2, custom_callback, lr_sched]
 
