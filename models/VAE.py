@@ -86,8 +86,8 @@ class VariationalAutoencoder():
 
         def sampling(args):
             mu, log_var = args
-            epsilon = K.random_normal(shape=K.shape(mu), mean=0., stddev=1.)
-            return mu + K.exp(log_var / 2) * epsilon
+            epsilon = ops.random_normal(shape=ops.shape(mu), mean=0., stddev=1.)
+            return mu + ops.exp(log_var / 2) * epsilon
 
         encoder_output = Lambda(sampling, name='encoder_output')([self.mu, self.log_var])
 
