@@ -1,7 +1,10 @@
 
 from keras.layers import Input, Conv2D, Flatten, Dense, Conv2DTranspose, Reshape, Lambda, Activation, BatchNormalization, LeakyReLU, Dropout
 from keras.models import Model
-from keras import backend as K
+
+# from keras import backend as K
+import keras.ops as ops
+
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint 
 from keras.utils import plot_model
@@ -73,7 +76,7 @@ class VariationalAutoencoder():
             if self.use_dropout:
                 x = Dropout(rate = 0.25)(x)
 
-        shape_before_flattening = K.int_shape(x)[1:]
+        shape_before_flattening = x.shape[1:]
 
         x = Flatten()(x)
         self.mu = Dense(self.z_dim, name='mu')(x)
@@ -137,11 +140,11 @@ class VariationalAutoencoder():
 
         ### COMPILATION
         def vae_r_loss(y_true, y_pred):
-            r_loss = K.mean(K.square(y_true - y_pred), axis = [1,2,3])
+            r_loss = ops.mean(ops.square(y_true - y_pred), axis = [1,2,3])
             return r_loss_factor * r_loss
 
         def vae_kl_loss(y_true, y_pred):
-            kl_loss =  -0.5 * K.sum(1 + self.log_var - K.square(self.mu) - K.exp(self.log_var), axis = 1)
+            kl_loss =  -0.5 * ops.sum(1 + self.log_var - ops.square(self.mu) - ops.exp(self.log_var), axis = 1)
             return kl_loss
 
         def vae_loss(y_true, y_pred):
@@ -149,7 +152,7 @@ class VariationalAutoencoder():
             kl_loss = vae_kl_loss(y_true, y_pred)
             return  r_loss + kl_loss
 
-        optimizer = Adam(lr=learning_rate)
+        optimizer = Adam(learning_rate=learning_rate)
         self.model.compile(optimizer=optimizer, loss = vae_loss,  metrics = [vae_r_loss, vae_kl_loss])
 
 
@@ -188,7 +191,7 @@ class VariationalAutoencoder():
         
         checkpoint_filepath=os.path.join(run_folder, "weights/weights-{epoch:03d}-{loss:.2f}.h5")
         checkpoint1 = ModelCheckpoint(checkpoint_filepath, save_weights_only = True, verbose=1)
-        checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/weights.h5'), save_weights_only = True, verbose=1)
+        checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/vae.weights.h5'), save_weights_only = True, verbose=1)
 
         callbacks_list = [checkpoint1, checkpoint2, custom_callback, lr_sched]
 
@@ -211,11 +214,11 @@ class VariationalAutoencoder():
 
         checkpoint_filepath=os.path.join(run_folder, "weights/weights-{epoch:03d}-{loss:.2f}.h5")
         checkpoint1 = ModelCheckpoint(checkpoint_filepath, save_weights_only = True, verbose=1)
-        checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/weights.h5'), save_weights_only = True, verbose=1)
+        checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/vae.weights.h5'), save_weights_only = True, verbose=1)
 
         callbacks_list = [checkpoint1, checkpoint2, custom_callback, lr_sched]
 
-        self.model.save_weights(os.path.join(run_folder, 'weights/weights.h5'))
+        self.model.save_weights(os.path.join(run_folder, 'weights/vae.weights.h5'))
                 
         self.model.fit_generator(
             data_flow
