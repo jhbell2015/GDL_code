@@ -15,7 +15,8 @@ class CustomCallback(Callback):
     def on_batch_end(self, batch, logs=None):  
         if batch % self.print_every_n_batches == 0:
             z_new = np.random.normal(size = (1,self.vae.z_dim))
-            reconst = self.vae.decoder.predict(np.array(z_new))[0].squeeze()
+#            reconst = self.vae.decoder.predict(np.array(z_new))[0].squeeze()
+            reconst = self.vae.decoder(z_new, training=False).numpy()[0].squeeze()
 
             filepath = os.path.join(self.run_folder, 'images', 'img_' + str(self.epoch).zfill(3) + '_' + str(batch) + '.jpg')
             if len(reconst.shape) == 2:

@@ -4,7 +4,6 @@ os.environ["KERAS_BACKEND"] = "tensorflow"
 from keras.layers import Input, Conv2D, Flatten, Dense, Conv2DTranspose, Reshape, Lambda, Activation, BatchNormalization, LeakyReLU, Dropout
 from keras.models import Model
 from keras import layers
-# from keras import backend as K
 import keras.ops as ops
 import keras
 
@@ -17,6 +16,72 @@ from utils.callbacks import CustomCallback, step_decay_schedule
 import numpy as np
 import json
 import pickle
+import tensorflow as tf
+
+
+class VAEModel(Model):
+    """Custom VAE model with custom train_step"""
+    def __init__(self, encoder, decoder, **kwargs):
+        super().__init__(**kwargs)
+        self.encoder = encoder
+        self.decoder = decoder
+        self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
+        self.reconstruction_loss_tracker = keras.metrics.Mean(name="reconstruction_loss")
+        self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
+        
+    def call(self, inputs):
+        z_mean, z_log_var, z = self.encoder(inputs)
+        reconstruction = self.decoder(z)
+        return reconstruction
+    
+    @property
+    def metrics(self):
+        return [
+            self.total_loss_tracker,
+            self.reconstruction_loss_tracker,
+            self.kl_loss_tracker,
+        ]
+    
+    def train_step(self, data):
+        if isinstance(data, tuple):
+            data = data[0]
+        
+        with tf.GradientTape() as tape:
+            # Forward pass through encoder and decoder
+            z_mean, z_log_var, z = self.encoder(data)
+            reconstruction = self.decoder(z)
+            
+            # Compute reconstruction loss
+            reconstruction_loss = ops.mean(
+                ops.sum(
+                    keras.losses.binary_crossentropy(data, reconstruction),
+                    axis=(1, 2)
+                )
+            )
+            
+            # Compute KL divergence loss
+            kl_loss = -0.5 * ops.mean(
+                ops.sum(1 + z_log_var - ops.square(z_mean) - ops.exp(z_log_var), axis=1)
+            )
+            
+            # Total loss
+            total_loss = reconstruction_loss + kl_loss
+        
+        # Compute gradients
+        grads = tape.gradient(total_loss, self.trainable_weights)
+        # Update weights
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        
+        # Update metrics
+        self.total_loss_tracker.update_state(total_loss)
+        self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+        
+        return {
+            "loss": self.total_loss_tracker.result(),
+            "reconstruction_loss": self.reconstruction_loss_tracker.result(),
+            "kl_loss": self.kl_loss_tracker.result(),
+        }
 
 
 class VariationalAutoencoder():
@@ -51,6 +116,9 @@ class VariationalAutoencoder():
         self.n_layers_decoder = len(decoder_conv_t_filters)
 
         self._build()
+
+    def error(self):
+        raise("by yane")
 
     def _build(self):
         
@@ -97,16 +165,13 @@ class VariationalAutoencoder():
                 epsilon = keras.random.normal(shape=(batch, dim), seed=self.seed_generator)
                 return z_mean + ops.exp(0.5 * z_log_var) * epsilon
 
-        self.mu = Dense(self.z_dim, name='mu')(x)
-        self.log_var = Dense(self.z_dim, name='log_var')(x)
+        z_mean = Dense(self.z_dim, name='mu')(x)
+        z_log_var = Dense(self.z_dim, name='log_var')(x)
 
-        encoder_output = Sampling()([self.mu, self.log_var])
+        z = Sampling()([z_mean, z_log_var])
         
-        # self.encoder_mu_log_var = Model(encoder_input, (self.mu, self.log_var))
-
-        # encoder_output = Lambda(sampling, name='encoder_output')([self.mu, self.log_var])
-
-        self.encoder = Model(encoder_input, encoder_output, name="encoder")
+        # Encoder now outputs z_mean, z_log_var, and z
+        self.encoder = Model(encoder_input, [z_mean, z_log_var, z], name="encoder")
         
         
 
@@ -144,31 +209,18 @@ class VariationalAutoencoder():
         self.decoder = Model(decoder_input, decoder_output)
 
         ### THE FULL VAE
-        model_input = encoder_input
-        model_output = self.decoder(encoder_output)
-
-        self.model = Model(model_input, model_output)
+        self.model = VAEModel(self.encoder, self.decoder)
+        
+        # Build the model
+        self.model.build((None,) + self.input_dim)
 
 
     def compile(self, learning_rate, r_loss_factor):
         self.learning_rate = learning_rate
-
-        ### COMPILATION
-        def vae_r_loss(y_true, y_pred):
-            r_loss = ops.mean(ops.square(y_true - y_pred), axis = [1,2,3])
-            return r_loss_factor * r_loss
-
-        def vae_kl_loss(y_true, y_pred):
-            kl_loss =  -0.5 * ops.sum(1 + self.log_var - ops.square(self.mu) - ops.exp(self.log_var), axis = 1)
-            return kl_loss
-
-        def vae_loss(y_true, y_pred):
-            r_loss = vae_r_loss(y_true, y_pred)
-            kl_loss = vae_kl_loss(y_true, y_pred)
-            return  r_loss + kl_loss
+        # self.r_loss_factor = r_loss_factor
 
         optimizer = Adam(learning_rate=learning_rate)
-        self.model.compile(optimizer=optimizer, loss = vae_loss,  metrics = [vae_r_loss, vae_kl_loss])
+        self.model.compile(optimizer=optimizer)
 
 
     def save(self, folder):
@@ -217,7 +269,7 @@ class VariationalAutoencoder():
             , shuffle = True
             , epochs = epochs
             , initial_epoch = initial_epoch
-            # , callbacks = callbacks_list
+            , callbacks = callbacks_list
         )
 
 
@@ -247,17 +299,14 @@ class VariationalAutoencoder():
 
     
     def plot_model(self, run_folder):
+        # Ensure models are built before plotting
+        if not self.model.built:
+            self.model.build((None,) + self.input_dim)
+        if not self.encoder.built:
+            self.encoder.build((None,) + self.input_dim)
+        if not self.decoder.built:
+            self.decoder.build((None, self.z_dim))
+            
         plot_model(self.model, to_file=os.path.join(run_folder ,'viz/model.png'), show_shapes = True, show_layer_names = True)
         plot_model(self.encoder, to_file=os.path.join(run_folder ,'viz/encoder.png'), show_shapes = True, show_layer_names = True)
         plot_model(self.decoder, to_file=os.path.join(run_folder ,'viz/decoder.png'), show_shapes = True, show_layer_names = True)
-
-
-
-        
-
-
-        
-
-        
-
-
