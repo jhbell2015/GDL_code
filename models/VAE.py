@@ -1,9 +1,12 @@
+import os
+os.environ["KERAS_BACKEND"] = "tensorflow"
 
 from keras.layers import Input, Conv2D, Flatten, Dense, Conv2DTranspose, Reshape, Lambda, Activation, BatchNormalization, LeakyReLU, Dropout
 from keras.models import Model
-
+from keras import layers
 # from keras import backend as K
 import keras.ops as ops
+import keras
 
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint 
@@ -13,7 +16,6 @@ from utils.callbacks import CustomCallback, step_decay_schedule
 
 import numpy as np
 import json
-import os
 import pickle
 
 
@@ -79,19 +81,32 @@ class VariationalAutoencoder():
         shape_before_flattening = x.shape[1:]
 
         x = Flatten()(x)
+
+
+        class Sampling(layers.Layer):
+            """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
+
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.seed_generator = keras.random.SeedGenerator(1337)
+        
+            def call(self, inputs):
+                z_mean, z_log_var = inputs
+                batch = ops.shape(z_mean)[0]
+                dim = ops.shape(z_mean)[1]
+                epsilon = keras.random.normal(shape=(batch, dim), seed=self.seed_generator)
+                return z_mean + ops.exp(0.5 * z_log_var) * epsilon
+
         self.mu = Dense(self.z_dim, name='mu')(x)
         self.log_var = Dense(self.z_dim, name='log_var')(x)
 
-        self.encoder_mu_log_var = Model(encoder_input, (self.mu, self.log_var))
+        encoder_output = Sampling()([self.mu, self.log_var])
+        
+        # self.encoder_mu_log_var = Model(encoder_input, (self.mu, self.log_var))
 
-        def sampling(args):
-            mu, log_var = args
-            epsilon = ops.random_normal(shape=ops.shape(mu), mean=0., stddev=1.)
-            return mu + ops.exp(log_var / 2) * epsilon
+        # encoder_output = Lambda(sampling, name='encoder_output')([self.mu, self.log_var])
 
-        encoder_output = Lambda(sampling, name='encoder_output')([self.mu, self.log_var])
-
-        self.encoder = Model(encoder_input, encoder_output)
+        self.encoder = Model(encoder_input, encoder_output, name="encoder")
         
         
 
@@ -189,7 +204,7 @@ class VariationalAutoencoder():
         custom_callback = CustomCallback(run_folder, print_every_n_batches, initial_epoch, self)
         lr_sched = step_decay_schedule(initial_lr=self.learning_rate, decay_factor=lr_decay, step_size=1)
         
-        checkpoint_filepath=os.path.join(run_folder, "weights/weights-{epoch:03d}-{loss:.2f}.h5")
+        checkpoint_filepath=os.path.join(run_folder, "weights/weights-{epoch:03d}-{loss:.2f}.weights.h5")
         checkpoint1 = ModelCheckpoint(checkpoint_filepath, save_weights_only = True, verbose=1)
         checkpoint2 = ModelCheckpoint(os.path.join(run_folder, 'weights/autoencoder.weights.h5'), save_weights_only = True, verbose=1)
 
