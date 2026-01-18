@@ -217,7 +217,7 @@ class VariationalAutoencoder():
             , shuffle = True
             , epochs = epochs
             , initial_epoch = initial_epoch
-            , callbacks = callbacks_list
+            # , callbacks = callbacks_list
         )
 
 
