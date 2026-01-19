@@ -205,7 +205,7 @@ class VariationalAutoencoder():
             
 
         decoder_output = x
-
+        
         self.decoder = Model(decoder_input, decoder_output)
 
         ### THE FULL VAE
